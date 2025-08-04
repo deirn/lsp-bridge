@@ -20,5 +20,6 @@
   "semantic_tokens": "basedpyright",
   "inlay_hint": "basedpyright",
   "imenu": "basedpyright",
-  "breadcrumb": "basedpyright"
+  "breadcrumb": "basedpyright",
+  "xref_find_references": "basedpyright"
 }

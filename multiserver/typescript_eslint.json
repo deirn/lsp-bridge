@@ -20,5 +20,6 @@
   "semantic_tokens": "typescript",
   "inlay_hint": "typescript",
   "imenu": "typescript",
-  "breadcrumb": "typescript"
+  "breadcrumb": "typescript",
+  "xref_find_references": "typescript"
 }

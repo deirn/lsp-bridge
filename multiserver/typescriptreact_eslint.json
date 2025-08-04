@@ -20,5 +20,6 @@
   "semantic_tokens": "typescriptreact",
   "inlay_hint": "typescriptreact",
   "imenu": "typescriptreact",
-  "breadcrumb": "typescriptreact"
+  "breadcrumb": "typescriptreact",
+  "xref_find_references": "typescriptreact"
 }

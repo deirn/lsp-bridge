@@ -20,5 +20,6 @@
   "semantic_tokens": "python-ms",
   "inlay_hint": "python-ms",
   "imenu": "python-ms",
-  "breadcrumb": "python-ms"
+  "breadcrumb": "python-ms",
+  "xref_find_references": "python-ms"
 }

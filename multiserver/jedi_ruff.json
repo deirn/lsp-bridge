@@ -20,5 +20,6 @@
   "semantic_tokens": "jedi",
   "inlay_hint": "jedi",
   "imenu": "jedi",
-  "breadcrumb": "jedi"
+  "breadcrumb": "jedi",
+  "xref_find_references": "jedi"
 }

@@ -20,5 +20,6 @@
   "semantic_tokens": "pylsp",
   "inlay_hint": "pylsp",
   "imenu": "pylsp",
-  "breadcrumb": "pylsp"
+  "breadcrumb": "pylsp",
+  "xref_find_references": "pylsp"
 }

@@ -20,5 +20,6 @@
   "semantic_tokens": "vscode-html-language-server",
   "inlay_hint": "vscode-html-language-server",
   "imenu": "vscode-html-language-server",
-  "breadcrumb": "vscode-html-language-server"
+  "breadcrumb": "vscode-html-language-server",
+  "xref_find_references": "vscode-html-language-server"
 }

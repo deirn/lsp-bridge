@@ -72,5 +72,4 @@ class Breadcrumb(Handler):
             eval_in_emacs(fn, filepath, filehost, reversed(segments))
         except:
             import traceback
-
             logger.error(traceback.format_exc())
