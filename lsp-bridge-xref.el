@@ -27,13 +27,11 @@
 (require 'lsp-bridge)
 (require 'xref)
 
-;;;###autoload
-(defun lsp-bridge-xref-find-references ()
-  "Find reference of thing at point."
-  (interactive)
+(defun lsp-bridge-xref--call (api fallback)
+  "Call backend Xref API, or FALLBACK if no LSP server found."
   (if (lsp-bridge-has-lsp-server-p)
-      (lsp-bridge-call-file-api "xref_find_references" (lsp-bridge--position))
-    (call-interactively #'xref-find-references)))
+      (lsp-bridge-call-file-api api (lsp-bridge--position))
+    (call-interactively fallback)))
 
 (defun lsp-bridge-xref--callback (response)
   "RESPONSE callback from backend."
@@ -51,6 +49,36 @@
                      (xref-make-file-location file line col))))
       response))
    nil))
+
+;;;###autoload
+(defun lsp-bridge-xref-find-references ()
+  "Find references of thing at point using Xref."
+  (interactive)
+  (lsp-bridge-xref--call "xref_find_references" #'xref-find-references))
+
+;;;###autoload
+(defun lsp-bridge-xref-find-declaration ()
+  "Find declaration of thing at point using Xref."
+  (interactive)
+  (lsp-bridge-xref--call "xref_find_declaration" #'xref-find-definitions))
+
+;;;###autoload
+(defun lsp-bridge-xref-find-definition ()
+  "Find definition of thing at point using Xref."
+  (interactive)
+  (lsp-bridge-xref--call "xref_find_definition" #'xref-find-definitions))
+
+;;;###autoload
+(defun lsp-bridge-xref-find-type-definition ()
+  "Find type definition of thing at point using Xref."
+  (interactive)
+  (lsp-bridge-xref--call "xref_find_type_definition" #'xref-find-definitions))
+
+;;;###autoload
+(defun lsp-bridge-xref-find-implementation ()
+  "Find implementation of thing at point using Xref."
+  (interactive)
+  (lsp-bridge-xref--call "xref_find_implementation" #'xref-find-definitions))
 
 (provide 'lsp-bridge-xref)
 ;;; lsp-bridge-xref.el ends here

@@ -7,7 +7,7 @@
     "--cancellationReceive=file:%FILEHASH%"
   ],
   "settings": {
-    "python.analysis": {
+    "basedpyright.analysis": {
       "autoImportCompletions": true,
       "typeshedPaths": [],
       "stubPath": "",
