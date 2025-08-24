@@ -7,8 +7,10 @@ class Xref(Handler):
     name = "_xref"
     no_message: str
 
-    def process_request(self, position) -> dict:
+    def process_request(self, cmd, position, display_action) -> dict:
+        self.cmd = cmd
         self.pos = position
+        self.display_action = display_action
         return dict(position=position)
 
     def process_response(self, response) -> None:
@@ -51,7 +53,7 @@ class Xref(Handler):
             )
 
         linecache.clearcache()
-        eval_in_emacs("lsp-bridge-xref--callback", result)
+        eval_in_emacs("lsp-bridge-xref--callback", self.cmd, result, self.display_action)
 
 
 class XrefFindDeclaration(Xref, Handler):
@@ -83,9 +85,7 @@ class XrefFindReferences(Xref, Handler):
     method = "textDocument/references"
     no_message = "No references."
 
-    def process_request(self, position) -> dict:
-        self.pos = position
-        return dict(
-            position=position,
-            context=dict(includeDeclaration=False),
-        )
+    def process_request(self, cmd, position, display_action) -> dict:
+        req = super().process_request(cmd, position, display_action)
+        req["context"] = dict(includeDeclaration=False)
+        return req
