@@ -5,12 +5,17 @@ import linecache
 
 class Xref(Handler):
     name = "_xref"
+    cancel_on_change = True
     no_message: str
 
-    def process_request(self, cmd, position, display_action) -> dict:
-        self.cmd = cmd
+    def eval(self, results):
+        eval_in_emacs("lsp-bridge-xref--callback", self.cmd, results, self.display_action)
+
+    def process_request(self, arg, position, display_action, cmd) -> dict:
+        self.arg = arg
         self.pos = position
         self.display_action = display_action
+        self.cmd = cmd
         return dict(position=position)
 
     def process_response(self, response) -> None:
@@ -21,7 +26,7 @@ class Xref(Handler):
         if not isinstance(response, list):
             response = [response]
 
-        result = []
+        results = []
         for location in response:
             uri = location.get("targetUri", location["uri"])
             range = location.get("targetRange", location["range"])
@@ -43,49 +48,75 @@ class Xref(Handler):
                 content[end_char:].rstrip() if same_line else "",
             ]
 
-            result.append(
-                dict(
-                    file=file,
-                    line=start_line,
-                    col=start_char,
-                    desc=desc,
-                )
+            result = dict(
+                file=file,
+                line=start_line,
+                col=start_char,
+                desc=desc,
             )
 
+            if same_line:
+                result["len"] = end_char - start_char
+
+            results.append(result)
+
         linecache.clearcache()
-        eval_in_emacs("lsp-bridge-xref--callback", self.cmd, result, self.display_action)
+        self.eval(results)
 
 
-class XrefFindDeclaration(Xref, Handler):
-    name = "xref_find_declaration"
+class XrefDeclarations(Xref, Handler):
+    name = "xref_declarations"
     method = "textDocument/declaration"
     no_message = "No declaration."
 
 
-class XrefFindDefinition(Xref, Handler):
-    name = "xref_find_definition"
+class XrefDefinitions(Xref, Handler):
+    name = "xref_definitions"
     method = "textDocument/definition"
     no_message = "No definition."
 
 
-class XrefFindTypeDefinition(Xref, Handler):
-    name = "xref_find_type_definition"
+class XrefTypeDefinitions(Xref, Handler):
+    name = "xref_type_definitions"
     method = "textDocument/typeDefinition"
     no_message = "No type definition."
 
 
-class XrefFindImplementation(Xref, Handler):
-    name = "xref_find_implementation"
+class XrefImplementations(Xref, Handler):
+    name = "xref_implementations"
     method = "textDocument/implementation"
     no_message = "No implementation."
 
 
-class XrefFindReferences(Xref, Handler):
-    name = "xref_find_references"
+class XrefReferences(Xref, Handler):
+    name = "xref_references"
     method = "textDocument/references"
     no_message = "No references."
 
-    def process_request(self, cmd, position, display_action) -> dict:
-        req = super().process_request(cmd, position, display_action)
-        req["context"] = dict(includeDeclaration=False)
+    def eval(self, results):
+        if str(self.cmd) == "xref-find-references-and-replace":
+            eval_in_emacs("lsp-bridge-xref--replace-callback", self.cmd, results, self.display_action)
+        else:
+            super().eval(results)
+
+    def process_request(self, arg, position, display_action, cmd) -> dict:
+        req = super().process_request(arg, position, display_action, cmd)
+        req["context"] = dict(includeDeclaration=True)
         return req
+
+
+class XrefApropos(Xref, Handler):
+    name = "xref_apropos"
+    method = "workspace/symbol"
+    provider = "workspace_symbol_provider"
+    provider_message = "Current server not support workspace symbol."
+    no_message = "No matches."
+
+    def process_request(self, arg, position, display_action, cmd) -> dict:
+        super().process_request(arg, position, display_action, cmd)
+        return dict(query=arg)
+
+    def process_response(self, response) -> None:
+        if isinstance(response, list):
+            response = [x["location"] for x in response]
+        super().process_response(response)  # pyright: ignore[reportArgumentType]

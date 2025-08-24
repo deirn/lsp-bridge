@@ -21,27 +21,18 @@
 ;;
 ;;; Commentary:
 ;; Xref "support" for lsp-bridge.
-;; Call individual lsp-bridge-xref-* command manually,
-;; or enable `lsp-bridge-xref-override-mode' to automatically replace the Xref commands.
+;; Enable with `lsp-bridge-xref-override-mode'.
 ;;
 ;;; Code:
 
 (require 'lsp-bridge)
 (require 'xref)
 
-(defconst lsp-bridge-xref--call-is-advice nil)
-(defun lsp-bridge-xref--call (api fallback display-action)
-  "Call backend Xref API, or FALLBACK if no LSP server found.
-If `lsp-bridge-xref--call-is-advice' is non-nil, return nil instead if no LSP server found.
-DISPLAY-ACTION is the same as in `xref-show-xrefs-function'."
-  (cond
-   ((lsp-bridge-has-lsp-server-p)
-    (lsp-bridge-call-file-api api this-command (lsp-bridge--position) display-action)
-    t)
-   (lsp-bridge-xref--call-is-advice nil)
-   (t (let ((current-prefix-arg nil)
-            (this-command fallback))
-        (call-interactively fallback)))))
+(defun lsp-bridge-xref--call (kind arg display-action)
+  "Call LSP backend for KIND with ARG and DISPLAY-ACTION."
+  (when (lsp-bridge-has-lsp-server-p)
+    (lsp-bridge-call-file-api (concat "xref_" (symbol-name kind)) arg (lsp-bridge--position) display-action this-command)
+    t))
 
 (defun lsp-bridge-xref--callback (cmd response display-action)
   "CMD, RESPONSE, and DISPLAY-ACTION callback from backend."
@@ -50,111 +41,41 @@ DISPLAY-ACTION is the same as in `xref-show-xrefs-function'."
    (lambda ()
      (mapcar
       (lambda (e)
-        (let ((desc (plist-get e :desc))
-              (file (plist-get e :file))
-              (line (plist-get e :line))
-              (col (plist-get e :col)))
-          (xref-make (concat (nth 0 desc)
-                             (propertize (nth 1 desc) 'face 'xref-match)
-                             (nth 2 desc))
-                     (xref-make-file-location file line col))))
+        (let* ((desc (plist-get e :desc))
+               (file (plist-get e :file))
+               (line (plist-get e :line))
+               (col (plist-get e :col))
+               (len (plist-get e :len))
+               (summary (concat (nth 0 desc)
+                                (propertize (nth 1 desc) 'face 'xref-match)
+                                (nth 2 desc)))
+               (location (xref-make-file-location file line col)))
+          (if len (xref-make-match summary location len)
+            (xref-make summary location))))
       response))
    display-action))
 
-
-;; Same window
+(defvar lsp-bridge-xref--replace-to nil)
+(defun lsp-bridge-xref--replace-callback (cmd response display-action)
+  "CMD, RESPONSE, and DISPLAY-ACTION callback from backend."
+  (message "%S" lsp-bridge-xref--replace-to)
+  (with-current-buffer
+      (let ((xref-show-xrefs-function (custom--standard-value 'xref-show-xrefs-function))
+            xref-auto-jump-to-first-xref)
+        (lsp-bridge-xref--callback cmd response display-action))
+    (xref-query-replace-in-results ".*" lsp-bridge-xref--replace-to)
+    (setq lsp-bridge-xref--replace-to nil)))
 
-;;;###autoload
-(defun lsp-bridge-xref-find-references ()
-  "Find references of thing at point using Xref."
-  (interactive)
-  (lsp-bridge-xref--call "xref_find_references" #'xref-find-references nil))
+(defconst lsp-bridge--xref-is-from-find-def nil)
+(defun lsp-bridge-xref-backend ()
+  (when (lsp-bridge-has-lsp-server-p)
+    'lsp-bridge))
 
-;;;###autoload
-(defun lsp-bridge-xref-find-declaration ()
-  "Find declaration of thing at point using Xref."
-  (interactive)
-  (lsp-bridge-xref--call "xref_find_declaration" #'xref-find-definitions nil))
+(cl-defmethod xref-backend-identifier-completion-table ((_backend (eql 'lsp-bridge)))
+  (list (substring-no-properties (or (thing-at-point 'symbol) ""))))
 
-;;;###autoload
-(defun lsp-bridge-xref-find-definition ()
-  "Find definition of thing at point using Xref."
-  (interactive)
-  (lsp-bridge-xref--call "xref_find_definition" #'xref-find-definitions nil))
-
-;;;###autoload
-(defun lsp-bridge-xref-find-type-definition ()
-  "Find type definition of thing at point using Xref."
-  (interactive)
-  (lsp-bridge-xref--call "xref_find_type_definition" #'xref-find-definitions nil))
-
-;;;###autoload
-(defun lsp-bridge-xref-find-implementation ()
-  "Find implementation of thing at point using Xref."
-  (interactive)
-  (lsp-bridge-xref--call "xref_find_implementation" #'xref-find-definitions nil))
-
-
-;; Other window
-
-;;;###autoload
-(defun lsp-bridge-xref-find-declaration-other-window ()
-  "Like `lsp-bridge-xref-find-declaration' but switch to other window."
-  (interactive)
-  (lsp-bridge-xref--call "xref_find_declaration" #'xref-find-definitions 'window))
-
-;;;###autoload
-(defun lsp-bridge-xref-find-definition-other-window ()
-  "Like `lsp-bridge-xref-find-definition' but switch to other window."
-  (interactive)
-  (lsp-bridge-xref--call "xref_find_definition" #'xref-find-definitions 'window))
-
-;;;###autoload
-(defun lsp-bridge-xref-find-type-definition-other-window ()
-  "Like `lsp-bridge-xref-find-type-definition' but switch to other window."
-  (interactive)
-  (lsp-bridge-xref--call "xref_find_type_definition" #'xref-find-definitions 'window))
-
-;;;###autoload
-(defun lsp-bridge-xref-find-implementation-other-window ()
-  "Like `lsp-bridge-xref-find-implementation' but switch to other window."
-  (interactive)
-  (lsp-bridge-xref--call "xref_find_implementation" #'xref-find-definitions 'window))
-
-
-;; Other frame
-
-;;;###autoload
-(defun lsp-bridge-xref-find-declaration-other-frame ()
-  "Like `lsp-bridge-xref-find-declaration' but switch to other frame."
-  (interactive)
-  (lsp-bridge-xref--call "xref_find_declaration" #'xref-find-definitions 'frame))
-
-;;;###autoload
-(defun lsp-bridge-xref-find-definition-other-frame ()
-  "Like `lsp-bridge-xref-find-definition' but switch to other frame."
-  (interactive)
-  (lsp-bridge-xref--call "xref_find_definition" #'xref-find-definitions 'frame))
-
-;;;###autoload
-(defun lsp-bridge-xref-find-type-definition-other-frame ()
-  "Like `lsp-bridge-xref-find-type-definition' but switch to other frame."
-  (interactive)
-  (lsp-bridge-xref--call "xref_find_type_definition" #'xref-find-definitions 'frame))
-
-;;;###autoload
-(defun lsp-bridge-xref-find-implementation-other-frame ()
-  "Like `lsp-bridge-xref-find-implementation' but switch to other frame."
-  (interactive)
-  (lsp-bridge-xref--call "xref_find_implementation" #'xref-find-definitions 'frame))
-
-
-
-(defconst lsp-bridge-xref--command-map
-  '((xref-find-references . lsp-bridge-xref-find-references)
-    (xref-find-definitions . lsp-bridge-xref-find-definition)
-    (xref-find-definitions-other-window . lsp-bridge-xref-find-definition-other-window)
-    (xref-find-definitions-other-frame . lsp-bridge-xref-find-definition-other-frame)))
+(cl-defmethod xref-backend-identifier-at-point ((_backend (eql 'lsp-bridge)))
+  (substring-no-properties (or (thing-at-point 'symbol) "")))
 
 ;;;###autoload
 (define-minor-mode lsp-bridge-xref-override-mode
@@ -164,17 +85,96 @@ See `lsp-bridge-xref--command-map' for the replacement mapping."
   :init-value nil
   (cond
    (lsp-bridge-xref-override-mode
-    (define-advice xref--read-identifier (:around (orig-fn prompt) lsp-bridge-xref)
-      (let ((cmd (cdr (assoc this-command lsp-bridge-xref--command-map))))
-        (when (or (not cmd)
-                  (not (let ((lsp-bridge-xref--call-is-advice t)
-                             (this-command cmd))
-                         (when (funcall cmd)
-                           ;; Throw an empty error to abort the xref command
-                           ;; FIXME: is there a better way to do this?
-                           (user-error "")))))
-          (funcall orig-fn prompt)))))
-   (t (advice-remove 'xref--read-identifier #'xref--read-identifier@lsp-bridge-xref))))
+    (add-hook 'xref-backend-functions #'lsp-bridge-xref-backend)
+
+    (define-advice xref--find-xrefs (:around (orig-fn input kind arg display-action) lsp-bridge)
+      (unless (lsp-bridge-xref--call kind arg display-action)
+        (funcall orig-fn input kind arg display-action)))
+
+    (define-advice xref--find-definitions (:around (orig-fn id display-action) lsp-bridge)
+      (when (or lsp-bridge--xref-is-from-find-def
+                (not (lsp-bridge-xref--call 'definitions id display-action)))
+        (funcall orig-fn id display-action)))
+
+    (define-advice xref-find-references-and-replace (:before (from to) lsp-bridge)
+      (when (lsp-bridge-has-lsp-server-p)
+        (message "abc")
+        (setq lsp-bridge-xref--replace-to to))))
+   (t
+    (remove-hook 'xref-backend-functions #'lsp-bridge-xref-backend)
+    (advice-remove 'xref--find-xrefs #'xref--find-xrefs@lsp-bridge)
+    (advice-remove 'xref--find-definitions #'xref--find-definitions@lsp-bridge)
+    (advice-remove 'xref-find-references-and-replace #'xref-find-references-and-replace@lsp-bridge))))
+
+(defun lsp-bridge-xref--find-def (kind id display-action)
+  "Same as `xref-find-definitions' and co, but for other LSP textDocument methods.
+KIND ID DISPLAY-ACTION"
+  (unless (lsp-bridge-xref--call kind id display-action)
+    (let ((lsp-bridge--xref-is-from-find-def t))
+      (xref--find-definitions id display-action))))
+
+
+
+;;;###autoload
+(defun lsp-bridge-xref-find-declarations (identifier)
+  "Find declarations of the IDENTIFIER using Xref.
+See `xref-find-definitions'"
+  (interactive (list (xref--read-identifier "Find declaration of: ")))
+  (lsp-bridge-xref--find-def 'declarations identifier nil))
+
+;;;###autoload
+(defun lsp-bridge-xref-find-type-definitions (identifier)
+  "Find type definitions of the IDENTIFIER using Xref.
+See `xref-find-definitions'"
+  (interactive (list (xref--read-identifier "Find type definition of: ")))
+  (lsp-bridge-xref--find-def 'type_definitions identifier nil))
+
+;;;###autoload
+(defun lsp-bridge-xref-find-implementations (identifier)
+  "Find implementations of the IDENTIFIER using Xref.
+See `xref-find-definitions'"
+  (interactive (list (xref--read-identifier "Find implementation of: ")))
+  (lsp-bridge-xref--find-def 'implementations identifier nil))
+
+
+
+;;;###autoload
+(defun lsp-bridge-xref-find-declarations-other-window (identifier)
+  "Like `lsp-bridge-xref-find-declarations' but open in other window."
+  (interactive (list (xref--read-identifier "Find declaration of: ")))
+  (lsp-bridge-xref--find-def 'declarations identifier nil))
+
+;;;###autoload
+(defun lsp-bridge-xref-find-type-definitions-other-window (identifier)
+  "Like `lsp-bridge-xref-find-type-definitions' but open in other window."
+  (interactive (list (xref--read-identifier "Find type definition of: ")))
+  (lsp-bridge-xref--find-def 'type_definitions identifier nil))
+
+;;;###autoload
+(defun lsp-bridge-xref-find-implementations-other-window (identifier)
+  "Like `lsp-bridge-xref-find-implementations' but open in other window."
+  (interactive (list (xref--read-identifier "Find implementation of: ")))
+  (lsp-bridge-xref--find-def 'implementations identifier nil))
+
+
+
+;;;###autoload
+(defun lsp-bridge-xref-find-declarations-other-frame (identifier)
+  "Like `lsp-bridge-xref-find-declarations' but open in other frame."
+  (interactive (list (xref--read-identifier "Find declaration of: ")))
+  (lsp-bridge-xref--find-def 'declarations identifier nil))
+
+;;;###autoload
+(defun lsp-bridge-xref-find-type-definitions-other-frame (identifier)
+  "Like `lsp-bridge-xref-find-type-definitions' but open in other frame."
+  (interactive (list (xref--read-identifier "Find type definition of: ")))
+  (lsp-bridge-xref--find-def 'type_definitions identifier nil))
+
+;;;###autoload
+(defun lsp-bridge-xref-find-implementations-other-frame (identifier)
+  "Like `lsp-bridge-xref-find-implementations' but open in other frame."
+  (interactive (list (xref--read-identifier "Find implementation of: ")))
+  (lsp-bridge-xref--find-def 'implementations identifier nil))
 
 (provide 'lsp-bridge-xref)
 ;;; lsp-bridge-xref.el ends here
