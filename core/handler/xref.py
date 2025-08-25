@@ -8,9 +8,6 @@ class Xref(Handler):
     cancel_on_change = True
     no_message: str
 
-    def eval(self, results):
-        eval_in_emacs("lsp-bridge-xref--callback", self.cmd, results, self.display_action)
-
     def process_request(self, arg, position, display_action, cmd) -> dict:
         self.arg = arg
         self.pos = position
@@ -61,7 +58,12 @@ class Xref(Handler):
             results.append(result)
 
         linecache.clearcache()
-        self.eval(results)
+        eval_in_emacs(
+            "lsp-bridge-xref--callback",
+            results,
+            self.display_action,
+            self.cmd,
+        )
 
 
 class XrefDeclarations(Xref, Handler):
@@ -92,12 +94,6 @@ class XrefReferences(Xref, Handler):
     name = "xref_references"
     method = "textDocument/references"
     no_message = "No references."
-
-    def eval(self, results):
-        if str(self.cmd) == "xref-find-references-and-replace":
-            eval_in_emacs("lsp-bridge-xref--replace-callback", self.cmd, results, self.display_action)
-        else:
-            super().eval(results)
 
     def process_request(self, arg, position, display_action, cmd) -> dict:
         req = super().process_request(arg, position, display_action, cmd)

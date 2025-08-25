@@ -29,13 +29,18 @@
 (require 'xref)
 
 (defun lsp-bridge-xref--call (kind arg display-action)
-  "Call LSP backend for KIND with ARG and DISPLAY-ACTION."
-  (when (lsp-bridge-has-lsp-server-p)
-    (lsp-bridge-call-file-api (concat "xref_" (symbol-name kind)) arg (lsp-bridge--position) display-action this-command)
+  "Call LSP backend for KIND with ARG and DISPLAY-ACTION.
+Also sends `lsp-bridge-xref--extra-args'."
+  (when (lsp-bridge-call-file-api-p)
+    (lsp-bridge-call-file-api (concat "xref_" (symbol-name kind))
+                              arg
+                              (lsp-bridge--position)
+                              display-action
+                              this-command)
     t))
 
-(defun lsp-bridge-xref--callback (cmd response display-action)
-  "CMD, RESPONSE, and DISPLAY-ACTION callback from backend."
+(defun lsp-bridge-xref--callback (response display-action cmd)
+  "RESPONSE, DISPLAY-ACTION, CMD callback from backend."
   (setq this-command cmd)
   (xref-show-xrefs
    (lambda ()
@@ -55,21 +60,8 @@
       response))
    display-action))
 
-(defvar lsp-bridge-xref--replace-to nil)
-(defun lsp-bridge-xref--replace-callback (cmd response display-action)
-  "CMD, RESPONSE, and DISPLAY-ACTION callback from backend."
-  (message "%S" lsp-bridge-xref--replace-to)
-  (with-current-buffer
-      (let ((xref-show-xrefs-function (custom--standard-value 'xref-show-xrefs-function))
-            xref-auto-jump-to-first-xref)
-        (lsp-bridge-xref--callback cmd response display-action))
-    (xref-query-replace-in-results ".*" lsp-bridge-xref--replace-to)
-    (setq lsp-bridge-xref--replace-to nil)))
-
 (defconst lsp-bridge--xref-is-from-find-def nil)
-(defun lsp-bridge-xref-backend ()
-  (when (lsp-bridge-has-lsp-server-p)
-    'lsp-bridge))
+(defun lsp-bridge-xref-backend () (when (lsp-bridge-call-file-api-p) 'lsp-bridge))
 
 (cl-defmethod xref-backend-identifier-completion-table ((_backend (eql 'lsp-bridge)))
   (list (substring-no-properties (or (thing-at-point 'symbol) ""))))
@@ -96,15 +88,37 @@ See `lsp-bridge-xref--command-map' for the replacement mapping."
                 (not (lsp-bridge-xref--call 'definitions id display-action)))
         (funcall orig-fn id display-action)))
 
-    (define-advice xref-find-references-and-replace (:before (from to) lsp-bridge)
-      (when (lsp-bridge-has-lsp-server-p)
-        (message "abc")
-        (setq lsp-bridge-xref--replace-to to))))
+    (define-advice query-replace-read-from (:around (orig-fn &rest args) lsp-bridge-xref)
+      (if (and (eq this-command 'xref-find-references-and-replace)
+               (eq (xref-find-backend) 'lsp-bridge))
+          (xref-backend-identifier-at-point 'lsp-bridge)
+        (apply orig-fn args)))
+
+    (define-advice xref-find-references-and-replace (:around (orig-fn from to) lsp-bridge)
+      (if (lsp-bridge-call-file-api-p)
+          (lsp-bridge--rename to)
+        (funcall orig-fn from to)))
+
+    (define-advice xref-query-replace-in-results (:around (orig-fn from to) lsp-bridge)
+      (if-let* ((_ (string= ".*" from))
+                (item (save-excursion
+                        (goto-char (point-min))
+                        (xref--search-property 'xref-item)))
+                (location (xref-item-location item))
+                (_ (save-excursion
+                     (xref--show-location location t)
+                     (lsp-bridge-call-file-api-p))))
+          (save-excursion
+            (xref--show-location location t)
+            (lsp-bridge--rename to))
+        (funcall orig-fn from to))))
    (t
     (remove-hook 'xref-backend-functions #'lsp-bridge-xref-backend)
     (advice-remove 'xref--find-xrefs #'xref--find-xrefs@lsp-bridge)
     (advice-remove 'xref--find-definitions #'xref--find-definitions@lsp-bridge)
-    (advice-remove 'xref-find-references-and-replace #'xref-find-references-and-replace@lsp-bridge))))
+    (advice-remove 'query-replace-read-from #'query-replace-read-from@lsp-bridge-xref)
+    (advice-remove 'xref-find-references-and-replace #'xref-find-references-and-replace@lsp-bridge)
+    (advice-remove 'xref-query-replace-in-results #'xref-query-replace-in-results@lsp-bridge))))
 
 (defun lsp-bridge-xref--find-def (kind id display-action)
   "Same as `xref-find-definitions' and co, but for other LSP textDocument methods.
