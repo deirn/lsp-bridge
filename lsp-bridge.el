@@ -1482,8 +1482,7 @@ So we build this macro to restore postion after code format."
                  (boundp 'acm-backend-lsp-filepath))
         (lsp-bridge-call-async "close_file" acm-backend-lsp-filepath))
 
-      (when buffer-file-name
-        (lsp-bridge-call-async "search_file_words_close_file" (lsp-bridge-get-buffer-file-name-text))))))
+      (lsp-bridge-call-async "search_file_words_close_file" (substring-no-properties (buffer-name))))))
 
 (defun lsp-bridge-set-prefix-style (prefix-style)
   ;; Wen LSP server need `acm-get-input-prefix-bound' return ASCII keyword prefix,
@@ -1781,16 +1780,11 @@ The line number is relative to the beginning of the source block."
         ;; Send whole org src block to lsp server.
         (lsp-bridge-org-babel-send-src-block-to-lsp-server))
 
-      ;; Set `lsp-bridge--before-change-begin-pos' and `lsp-bridge--before-change-end-pos'
-      ;; if `lsp-bridge-has-lsp-server-p' or `lsp-bridge-is-remote-file'
-      (when (or (lsp-bridge-has-lsp-server-p)
-                (lsp-bridge-is-remote-file))
-        (setq-local lsp-bridge--before-change-begin-point begin)
-        (setq-local lsp-bridge--before-change-end-point end)
+      (setq-local lsp-bridge--before-change-begin-point begin)
+      (setq-local lsp-bridge--before-change-end-point end)
 
-        (setq-local lsp-bridge--before-change-begin-pos (lsp-bridge--point-position begin))
-        (setq-local lsp-bridge--before-change-end-pos (lsp-bridge--point-position end))
-        ))))
+      (setq-local lsp-bridge--before-change-begin-pos (lsp-bridge--point-position begin))
+      (setq-local lsp-bridge--before-change-end-pos (lsp-bridge--point-position end)))))
 
 (defun lsp-bridge-monitor-post-self-insert ()
   ;; Make sure this function be called after `electric-pair-mode'
