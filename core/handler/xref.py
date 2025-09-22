@@ -1,5 +1,6 @@
 from core.handler import Handler
 from core.utils import *
+from .jdt_uri_resolver import resolve_jdt_uri
 import linecache
 
 
@@ -8,7 +9,7 @@ class Xref(Handler):
     cancel_on_change = True
     no_message: str
 
-    def process_request(self, arg, position, display_action, cmd) -> dict:
+    def process_request(self, arg, position, display_action, cmd):
         self.arg = arg
         self.pos = position
         self.display_action = display_action
@@ -24,46 +25,65 @@ class Xref(Handler):
             response = [response]
 
         results = []
-        for location in response:
+        def resolve_callback(index, uri):
+            if uri:
+                location = response[index]
+                file = uri_to_path(uri)
+                range = location.get("targetRange", location["range"])
+                start = range["start"]
+                end = range["end"]
+
+                start_line = start["line"] + 1
+                start_char = start["character"]
+                end_line = end["line"] + 1
+                end_char = end["character"]
+                same_line = start_line == end_line
+
+                content = linecache.getline(file, start_line)
+                desc = [
+                    content[0:start_char].lstrip(),
+                    content[start_char : end_char if same_line else len(content)],
+                    content[end_char:].rstrip() if same_line else "",
+                ]
+
+                result = dict(
+                    file=file,
+                    line=start_line,
+                    col=start_char,
+                    desc=desc,
+                )
+
+                if same_line:
+                    result["len"] = end_char - start_char
+
+                results.append(result)
+
+            if index < (len(response) - 1):
+                resolve(index + 1)
+            else:
+                linecache.clearcache()
+                eval_in_emacs(
+                    "lsp-bridge-xref--callback",
+                    results,
+                    self.display_action,
+                    self.cmd,
+                )
+
+        def resolve(index):
+            location = response[index]
             uri = location.get("targetUri", location["uri"])
-            range = location.get("targetRange", location["range"])
 
-            file = uri_to_path(uri)
-            start = range["start"]
-            end = range["end"]
+            if uri.startswith("jdt://"):
+                self.file_action.send_server_request(
+                    self.file_action.single_server,
+                    "xref_jdt_uri_resolver",
+                    uri,
+                    lambda uri: resolve_callback(index, uri),
+                )
+            else:
+                resolve_callback(index, uri)
 
-            start_line = start["line"] + 1
-            start_char = start["character"]
-            end_line = end["line"] + 1
-            end_char = end["character"]
-            same_line = start_line == end_line
-
-            content = linecache.getline(file, start_line)
-            desc = [
-                content[0:start_char].lstrip(),
-                content[start_char : end_char if same_line else len(content)],
-                content[end_char:].rstrip() if same_line else "",
-            ]
-
-            result = dict(
-                file=file,
-                line=start_line,
-                col=start_char,
-                desc=desc,
-            )
-
-            if same_line:
-                result["len"] = end_char - start_char
-
-            results.append(result)
-
-        linecache.clearcache()
-        eval_in_emacs(
-            "lsp-bridge-xref--callback",
-            results,
-            self.display_action,
-            self.cmd,
-        )
+        resolve(0)
 
 
 class XrefDeclarations(Xref, Handler):
@@ -116,3 +136,22 @@ class XrefApropos(Xref, Handler):
         if isinstance(response, list):
             response = [x["location"] for x in response]
         super().process_response(response)  # pyright: ignore[reportArgumentType]
+
+
+class XrefJdtUriResolver(Handler):
+    name = "xref_jdt_uri_resolver"
+    method = "java/classFileContents"
+    cancel_on_change = True
+    send_document_uri = False
+
+    def process_request(self, uri, callback) -> dict:
+        self.uri = uri
+        self.callback = callback
+        return dict(uri=uri)
+
+    def process_response(self, response):
+        if (not response) or (not isinstance(response, str)):
+            self.callback(None)
+            return
+
+        self.callback(resolve_jdt_uri(self.file_action, self.uri, response))
