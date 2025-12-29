@@ -163,9 +163,6 @@ class FileAction:
             method_server_names = self.multi_servers_info.get(method, default)
             if not isinstance(method_server_names, list):
                 method_server_names = [method_server_names]
-        elif method in ["execute_command"]:
-            # "execute_command" is trigger by code action, one time only need send request to *ONE* LSP server.
-            method_server_names = [args[0]] # first arguments if server name.
         else:
             method_server_names = [self.multi_servers_info.get(method, default)]
         return method_server_names
@@ -177,7 +174,12 @@ class FileAction:
             if self.single_server:
                 self.send_request(self.single_server, method, handler, *args, **kwargs)
             else:
-                for method_server_name in self.get_method_server_names(method):
+                if method in ["execute_command"]:
+                    # "execute_command" is trigger by code action, one time only need send request to *ONE* LSP server.
+                    method_server_names = [args[0]] # first arguments if server name.
+                else:
+                    method_server_names = self.get_method_server_names(method)
+                for method_server_name in method_server_names:
                     method_server = self.multi_servers[method_server_name]
                     self.send_request(method_server, method, handler, *args, **kwargs)
         elif hasattr(self, method):
@@ -269,7 +271,7 @@ class FileAction:
     def _do_pull_diagnostics(self):
         """Actually send the diagnostic requests to the servers."""
         if self.multi_servers:
-            for server_name in self.get_method_server_names("diagnostics"):
+            for server_name in self.get_method_server_names('diagnostics'):
                 lsp_server = self.multi_servers[server_name]
                 if lsp_server.diagnostic_provider and lsp_server.enable_diagnostics:
                     self.send_request(lsp_server, 'diagnostic', Diagnostic, lsp_server.server_info["name"])
